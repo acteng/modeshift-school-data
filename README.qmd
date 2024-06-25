@@ -11,6 +11,7 @@ execute:
 #| include: false
 library(tidyverse)
 library(sf)
+library(patchwork)
 ```
 
 
@@ -36,26 +37,184 @@ accred = table(school_ms$`Current Accreditation`)
 
 ```
 
-A plot of the counts of students using different modes of travel to school over time is shown below.
+```{r}
+
+```
+
+A plot of the counts of students using different modes of travel to school over time (2018/2019 to 2022/2023 shown as years for which we have a high response rate), with facets showing different travel plan (TP) ratings, is shown below.
 
 ```{r}
 #| label: mode-count-time
 school_ms_long = school_ms |>
   select(`LA Name`:Motorcyle) |>
   select(-Site, -`Survey Year`) |>
-  pivot_longer(cols = nms[12:21], names_to = "Mode", values_to = "count") 
+  pivot_longer(cols = nms[12:21], names_to = "Mode", values_to = "count")
+# Create simplified mode breakdown:
+school_ms_long = school_ms_long |>
+  mutate(
+    `Mode (full)` = Mode,
+    Mode = case_when(
+      Mode %in% c("Walk", "Scoot/Skate") ~ "Walk/Scoot",
+      Mode %in% "Cycle" ~ "Cycle",
+      Mode %in% c("Public Bus", "School Bus", "P&S", "Train") ~ "Public Transport",
+      Mode %in% c("Car Share", "Car", "Motorcyle") ~ "Private Transport",
+      TRUE ~ "Other"
+    )
+  ) |>
+  # Ordered factor:
+  mutate(Mode = factor(Mode, levels = c("Walk/Scoot", "Cycle", "Public Transport", "Private Transport", "Other")))
+```
+
+The modeshift dataset contains a detailed breakdown by mode, with the number of observations for each mode and year shown below:
+
+```{r}
+#| label: mode-full
+school_ms_long |>
+  group_by(`School Year`, Mode = `Mode (full)`) |>
+    summarise(count = sum(count, na.rm = TRUE)) |>
+    ungroup() |>
+  ggplot(aes(x = `School Year`, y = count, fill = Mode), group = Mode) +
+  geom_bar(stat = "identity") +
+    facet_wrap(~Mode) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r}
 school_msy = school_ms_long |>
   group_by(`School Year`, `Current Accreditation`, Mode) |>
-    summarise(count = sum(count)) |>
+    summarise(count = sum(count, na.rm = TRUE)) |>
     ungroup() 
 # table(school_msy$`School Year`)
+# summary(school_msy)
 
 school_msy |>
-  filter(`School Year` >= "2018/2019") |>
+  filter(`School Year` >= "2018/2019" & `School Year` <= "2022/2023") |>
   ggplot(aes(x = `School Year`, y = count, fill = Mode), group = Mode) +
   geom_bar(stat = "identity") +
     facet_wrap(~`Current Accreditation`) +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
+school_ids_subset = school_ms_long |>
+  group_by(URN, `School Year`) |>
+  mutate(n_responses = sum(count, na.rm = TRUE)) |>
+  filter(n_responses > 0) |>
+  summarise(n = n()) |>
+  mutate(school_years_char = paste(`School Year`, collapse = ", ")) |>
+  filter(str_detect(school_years_char, "2018/2019, 2019/2020, 2020/2021, 2021/2022, 2022/2023")) |>
+  pull(URN) |>
+  unique()
+
+```
+
+To get a handle on the rate of change, we'll focus on a subset of schools that have continuous records for the 5 years from 2018/2019 to 2022/2023.
+Of the `r length(unique(school_ms$URN))` schools in the dataset, `r length(school_ids_subset)` schools have continuous records for the 5 years from 2018/2019 to 2022/2023.
+
+
+```{r}
+#| label: mode-proportion-time-subset
+school_proportions = school_ms_long |>
+  group_by(`School Year`, Mode) |>
+    summarise(count = sum(count, na.rm = TRUE)) |>
+    # Convert to % for each year and accreditation:
+    group_by(`School Year`) |>
+    mutate(Proportion = count / sum(count, na.rm = TRUE)) |>
+    ungroup() |>
+  filter(`School Year` >= "2018/2019" & `School Year` <= "2022/2023")
+school_proportions_subset = school_ms_long |>
+  filter(URN %in% school_ids_subset) |>
+  group_by(`School Year`, Mode) |>
+    summarise(count = sum(count, na.rm = TRUE)) |>
+    # Convert to % for each year and accreditation:
+    group_by(`School Year`) |>
+    mutate(Proportion = count / sum(count, na.rm = TRUE)) |>
+    ungroup() |>
+  filter(`School Year` >= "2018/2019" & `School Year` <= "2022/2023")
+g1 = school_proportions |>
+  ggplot(aes(x = `School Year`, y = Proportion, fill = Mode), group = Mode) +
+  geom_bar(stat = "identity") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    # % y lab:
+    scale_y_continuous(labels = scales::percent_format())
+g2 = school_proportions_subset |>
+  ggplot(aes(x = `School Year`, y = Proportion, fill = Mode), group = Mode) +
+  geom_bar(stat = "identity") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    # % y lab:
+    scale_y_continuous(labels = scales::percent_format())
+# g1 | g2 # very similar
+g2
+```
+
+Let's calculate the rate of change in proportions:
+
+```{r}
+school_proportions_urn = school_ms_long |>
+  filter(URN %in% school_ids_subset) |>
+  group_by(`School Year`, URN, Mode) |>
+    summarise(count = sum(count, na.rm = TRUE)) |>
+    # Convert to % for each year and accreditation:
+    group_by(`School Year`, URN) |>
+    mutate(Proportion = count / sum(count, na.rm = TRUE)) |>
+    ungroup() 
+# summary(school_proportions_urn)
+```
+
+```{r}
+school_proportions_wide = school_proportions_urn |>
+  select(-count) |>
+  pivot_wider(names_from = Mode, values_from = Proportion)
+```
+
+```{r}
+# Summarised dataset with % uptake for each active mode:
+school_proportions_urn_summary = school_proportions_wide |>
+  # Filter to the 5 years of interest:
+  filter(`School Year` %in% c("2018/2019", "2019/2020", "2020/2021", "2021/2022", "2022/2023")) |>
+  arrange(URN, `School Year`) |>
+  group_by(URN) |>
+  summarise(
+    `Walk/Scoot` = `Walk/Scoot`[[5]] - `Walk/Scoot`[[1]],
+    Cycle = Cycle[[5]] - Cycle[[1]],
+    Active = `Walk/Scoot` + Cycle,
+    `Public Transport` = `Public Transport`[[5]] - `Public Transport`[[1]],
+    `Private Transport` = `Private Transport`[[5]] - `Private Transport`[[1]]
+  ) |>
+  # Classify schools by mode shift with breaks at -0.5, 0, 0.01, 0.02, 0.05, 0.08, 1
+  mutate(
+    Group = case_when(
+      Active < 0 ~ "Decrease",
+      Active < 0.02 ~ "Small Increase",
+      Active < 0.05 ~ "Increase",
+      Active < 0.08 ~ "Large Increase",
+      TRUE ~ "Very Large Increase"
+    )
+  ) |>
+  # As factor:
+  mutate(Group = factor(Group, levels = c("Decrease", "Small Increase", "Increase", "Large Increase", "Very Large Increase"))
+  ) 
+
+# table(school_proportions_urn_summary$Group)
+
+# summary(school_proportions_urn_summary)
+school_proportions_urn_summary_long = school_proportions_urn_summary |>
+  pivot_longer(cols = c(`Walk/Scoot`, Cycle, `Public Transport`, `Private Transport`), names_to = "Mode", values_to = "change")
+
+```
+
+Let's visualise the change in % active travel by group, with breaks at -0.5, 0, 0.01, 0.02, 0.05, 0.08, 1:
+
+```{r}
+#| label: mode-proportion-time-single
+school_proportions_urn_summary_long |>
+  filter(Mode != "Private Transport") |>
+  ggplot(aes(x = Group, y = change, fill = Mode), group = Mode) +
+  geom_boxplot() +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    # % y lab:
+    scale_y_continuous(labels = scales::percent_format())
 ```
