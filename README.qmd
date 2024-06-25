@@ -218,3 +218,25 @@ school_proportions_urn_summary_long |>
     # % y lab:
     scale_y_continuous(labels = scales::percent_format())
 ```
+
+The graph shows that schools that have increased active travel (excluding walking to public transport) have done so primarily by boosting walking.
+However, some schools have been very successful in boosting cycling.
+Summary statistics for the 10% of schools with the largest increase in active travel, for walking and cycling, are shown below:
+
+
+```{r}
+success_10pct_walk = school_proportions_urn_summary |>
+  arrange(desc(`Walk/Scoot`)) |>
+  slice(1:round(0.1 * n()))
+success_10pct_cycle = school_proportions_urn_summary |>
+  arrange(desc(Cycle)) |>
+  slice(1:round(0.1 * n()))
+# mean(success_10pct_walk$`Walk/Scoot`)
+# mean(success_10pct_cycle$Cycle)
+# # Change per year:
+mean_change_walk = mean(success_10pct_walk$`Walk/Scoot`) / 5
+mean_change_cycle = mean(success_10pct_cycle$Cycle) / 5  
+```
+
+Overall, we found that the 10% of schools with the largest increase in walking boosted walking by an average of `r round(mean_change_walk * 100, 1)` percentage points per year.
+The 10% of schools with the largest increase in cycling boosted cycling by an average of `r round(mean_change_cycle * 100, 1)` percentage points per year.
