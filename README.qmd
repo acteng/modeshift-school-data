@@ -1,0 +1,61 @@
+---
+format: gfm
+execute: 
+  echo: false
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(tidyverse)
+library(sf)
+```
+
+
+```{r}
+f = list.files(pattern = "xlsx")
+f_last = tail(f, 1)
+school_ms = readxl::read_excel(f_last)
+nms = names(school_ms)
+#  [1] "Local Authority"       "LA Name"               "Site"                 
+#  [4] "URN"                   "Current Accreditation" "Survey Type"          
+#  [7] "School Year"           "Survey Month"          "Survey Year"          
+# [10] "Participation %"       "Total Actual"          "Walk"                 
+# [13] "Cycle"                 "Scoot/Skate"           "Public Bus"           
+# [16] "School Bus"            "P&S"                   "Train"                
+# [19] "Car Share"             "Car"                   "Motorcyle"            
+# [22] "% Walk"                "% Cycle"               "% Scoot/Skate"        
+# [25] "% Public Bus"          "% School Bus"          "% P&S"                
+# [28] "% Train"               "% Car Share"           "% Car"                
+# [31] "% Motorcyle"
+accred = table(school_ms$`Current Accreditation`)
+#    Approved TP   Excellent TP        Good TP Outstanding TP   Very Good TP 
+#           7687           2488          17001           2720           4020 
+
+```
+
+A plot of the counts of students using different modes of travel to school over time is shown below.
+
+```{r}
+#| label: mode-count-time
+school_ms_long = school_ms |>
+  select(`LA Name`:Motorcyle) |>
+  select(-Site, -`Survey Year`) |>
+  pivot_longer(cols = nms[12:21], names_to = "Mode", values_to = "count") 
+school_msy = school_ms_long |>
+  group_by(`School Year`, `Current Accreditation`, Mode) |>
+    summarise(count = sum(count)) |>
+    ungroup() 
+# table(school_msy$`School Year`)
+
+school_msy |>
+  filter(`School Year` >= "2018/2019") |>
+  ggplot(aes(x = `School Year`, y = count, fill = Mode), group = Mode) +
+  geom_bar(stat = "identity") +
+    facet_wrap(~`Current Accreditation`) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
